@@ -11,10 +11,12 @@ import { clearAllProducts } from './utils/db';
 import AnalyticsSummary from './components/Layout/AnalyticsSummary'; 
 import SearchBar from './components/Common/SearchBar';
 import FilterButtons from './components/Common/FilterButtons';
-import ExportButton from './components/Common/ExportButton';
 import {exportToExcel, exportSummaryReport} from './utils/exportToExcel'
 import SalesDashboard from './components/Layout/SalesDashboard';
 import TransactionHistory from './components/Layout/TransactionHistory'
+import SalesChart from './components/Layout/SalesChart';
+import TabNavigation from './components/Layout/TabNavigation';
+import PrintReports from './components/Layout/PrintReports';
 
 function App() {
   const {
@@ -35,6 +37,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [sortBy, setSortBy] = useState('name');
+  const [activeTab, setActiveTab] = useState('inventory');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -194,7 +197,7 @@ function App() {
   })
 
   // Sort logic
-   .sort((a, b) => {
+   filteredProducts.sort((a, b) => {
     switch (sortBy) {
       case 'name':
         return a.name.localeCompare(b.name);
@@ -207,7 +210,6 @@ function App() {
          case 'date-old':
           return a.id - b.id;
       default:
-        break;
         return 0;
     }
   });
@@ -222,7 +224,7 @@ function App() {
         <div className="header-content">
           <Package size={32} />
           <div>
-            <h1>StockAlerte</h1>
+            <h1>StockAlert</h1>
             <p>Pièces de rechange</p>
           </div>
 
@@ -245,79 +247,120 @@ function App() {
           >
             Reset DB
           </button>
-
-          {/* Export Button */}
-        {products.length > 0 && (
-          <ExportButton 
-          onExport={handleExport}
-          onExportSummary={handleExportSummary}
-          />
-        )}
-
         </div>
       </header>
 
+      {/* Tab Navigation */}
+      <TabNavigation activeTab={activeTab} onChange={setActiveTab} />
+
       <div className='container'>
-        <button className='btn-add-product' onClick={() => setShowAddModal(true)}>
-          <Plus size={24} />
-          <span>Ajouter Nouveau Produit</span>
-        </button>
-
-
-        {/* Analytics Summary */}
-        {products.length > 0 && <AnalyticsSummary products={products} />} 
-
-        {/* Sales Dashboard */}
-        {products.length > 0 && <SalesDashboard products={products} />}
-
-        {/* Transaction History */}
-        {products.length > 0 && <TransactionHistory products={products} />}
-
-        {/*Search, Filter & Sort */}
-        {products.length > 0 && (
+        {/* TAB 1: INVENTAIRE */}
+        {activeTab === 'inventory' && (
           <>
-          <SearchBar
-          value={searchQuery}
-          onChange={setSearchQuery}
-          onClear={() => setSearchQuery('')}
-          sortBy={sortBy}
-          onSortChange={setSortBy}
-          />
+            <button className='btn-add-product' onClick={() => setShowAddModal(true)}>
+              <Plus size={24} />
+              <span>Ajouter Nouveau Produit</span>
+            </button>
 
-          <FilterButtons
-          activeFilter={filterType}
-          onChange={setFilterType}
-          counts={{
-            all: products.length,
-            lowStock: products.filter(p => p.stock <= p.minStock).length,
-            normal: products.filter(p => p.stock > p.minStock).length
-          }}
-          />
+            {products.length > 0 && <AnalyticsSummary products={products} />}
+
+            {products.length > 0 && (
+              <>
+                <SearchBar 
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  onClear={() => setSearchQuery('')}
+                  sortBy={sortBy}
+                  onSortChange={setSortBy}
+                />
+                
+                <FilterButtons
+                  activeFilter={filterType}
+                  onChange={setFilterType}
+                  counts={{
+                    all: products.length,
+                    lowStock: products.filter(p => p.stock <= p.minStock).length,
+                    normal: products.filter(p => p.stock > p.minStock).length
+                  }}
+                />
+              </>
+            )}
+
+            <div className='product-grid'>
+              {filteredProducts.length === 0 ? (
+                <div className='empty-state'>
+                  <Package size={64} strokeWidth={1} />
+                  <p>Aucun produit trouvé</p>
+                  <p className='empty-subtitle'>
+                    {searchQuery ? 'Essayez un autre terme de recherche' : 'Ajoutez votre premier produit ci-dessus'}
+                  </p>
+                </div>
+              ) : (
+                filteredProducts.map(product => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onStockChange={handleStockChange}
+                    onEdit={handleEditImages}
+                    onDelete={handleDeleteProduct}
+                  />
+                ))
+              )}
+            </div>
           </>
         )}
 
-        
+        {/* TAB 2: VENTES */}
+        {activeTab === 'sales' && (
+          <>
+            {products.length > 0 ? (
+              <>
+                <SalesDashboard products={products} />
+                <SalesChart products={products} />
+              </>
+            ) : (
+              <div className='empty-state'>
+                <Package size={64} strokeWidth={1} />
+                <p>Aucun produit</p>
+                <p className='empty-subtitle'>Ajoutez des produits dans l'onglet Inventaire</p>
+              </div>
+            )}
+          </>
+        )}
 
-        {/* Product Grid using filtered products */}
-        <div className='product-grid'>
-          {filteredProducts.length === 0 ? (
-            <div className='empty-state'>
-              <Package size={64} strokeWidth={1} />
-              <p>Aucun produit trouve</p>
-              <p className='empty-subtitle'>{searchQuery ? 'Essayez un autre terme de recherche': 'Ajoutez votre premier produit ci-dessus'}</p>
-            </div>
-          ) : (
-            filteredProducts.map(product => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onStockChange={handleStockChange}
-                onEdit={handleEditImages}
-                onDelete={handleDeleteProduct}
+        {/* TAB 3: HISTORIQUE */}
+        {activeTab === 'history' && (
+          <>
+            {products.length > 0 ? (
+              <TransactionHistory products={products} />
+            ) : (
+              <div className='empty-state'>
+                <Package size={64} strokeWidth={1} />
+                <p>Aucun produit</p>
+                <p className='empty-subtitle'>Ajoutez des produits dans l'onglet Inventaire</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TAB 4: RAPPORTS */}
+        {activeTab === 'reports' && (
+          <>
+            {products.length > 0 ? (
+              <PrintReports 
+                products={products}
+                onExport={handleExport}
+                onExportSummary={handleExportSummary}
               />
-            ))
-          )}
-        </div>
+            ) : (
+              <div className='empty-state'>
+                <Package size={64} strokeWidth={1} />
+                <p>Aucun produit</p>
+                <p className='empty-subtitle'>Ajoutez des produits dans l'onglet Inventaire</p>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <AddProductModal
