@@ -7,6 +7,7 @@ export const usePWA = () => {
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       setDeferredPrompt(e);
       setIsInstallable(true);
     };

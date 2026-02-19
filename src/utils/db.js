@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 const DB_NAME = 'StockAlertDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'products';
@@ -90,8 +92,33 @@ class DatabaseManager {
       
       const request = objectStore.add(cleanProduct);
 
-      request.onsuccess = () => {
-        console.log('Product added successfully:', cleanProduct.name);
+      request.onsuccess = async () => {
+  console.log('Product added successfully:', cleanProduct.name);
+  
+  // Sync product to Supabase
+  try {
+    const { error } = await supabase
+        .from('products')
+        .insert([{
+          id: cleanProduct.id,
+          name: cleanProduct.name,
+          stock: cleanProduct.stock,
+          minStock: cleanProduct.minStock,
+          costPrice: cleanProduct.costPrice,
+          sellingPrice: cleanProduct.sellingPrice,
+          images: cleanProduct.images
+          }]);
+        
+        if (error) {
+         console.error('Supabase sync error:', error);
+         console.error('Error details:', JSON.stringify(error, null, 2));
+        } else {
+        console.log('Synced to Supabase successfully!');
+     }
+        } catch (err) {
+        console.error('Supabase error:', err);
+        }
+  
         resolve(cleanProduct);
       };
 
@@ -128,12 +155,30 @@ class DatabaseManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([STORE_NAME], 'readwrite');
       const objectStore = transaction.objectStore(STORE_NAME);
-      const request = objectStore.put(product);
-
-      request.onsuccess = () => {
-        console.log('Product updated:', product.name);
-        resolve(product);
-      };
+      const request = objectStore.put(product);request.onsuccess = async () => {
+  console.log('Product updated:', product.name);
+  
+  // Sync update to Supabase
+  try {
+    const { error } = await supabase
+      .from('products')
+      .update({
+        name: product.name,
+        stock: product.stock,
+        minStock: product.minStock,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        images: product.images
+      })
+      .eq('id', product.id);
+    
+    if (error) console.error('Supabase sync error:', error);
+  } catch (err) {
+    console.error('Supabase error:', err);
+  }
+  
+  resolve(product);
+};
 
       request.onerror = () => {
         console.error('Failed to update product');
@@ -150,8 +195,24 @@ class DatabaseManager {
       const objectStore = transaction.objectStore(STORE_NAME);
       const request = objectStore.delete(productId);
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         console.log('Product deleted:', productId);
+          //delete from Supabase
+      try {
+        const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productId);
+    
+      if (error) {
+        console.error('Supabase delete error:', error);
+      } else {
+       console.log('Deleted from Supabase!');
+     }
+    } catch (err) {
+      console.error('Supabase error:', err);
+    }
+
         resolve(productId);
       };
 
@@ -183,25 +244,46 @@ class DatabaseManager {
   }
 
   // Transaction methods
-  async addTransaction(transaction) {
-    if (!this.db) await this.init();
+async addTransaction(transaction) {
+  if (!this.db) await this.init();
 
-    return new Promise((resolve, reject) => {
-      const txn = this.db.transaction(['transactions'], 'readwrite');
-      const store = txn.objectStore('transactions');
-      const request = store.add(transaction);
+  return new Promise((resolve, reject) => {
+    const txn = this.db.transaction(['transactions'], 'readwrite');
+    const store = txn.objectStore('transactions');
+    const request = store.add(transaction);
 
-      request.onsuccess = () => {
-        console.log('Transaction logged');
-        resolve(transaction);
+    request.onsuccess = async () => {
+      console.log('Transaction logged');
+      
+      //sync to Supabase
+      try {
+        const { error } = await supabase
+          .from('transactions')
+          .insert([{
+            productId: transaction.productId,
+            productName: transaction.productName,
+            type: transaction.type,
+            quantity: transaction.quantity
+          }]);
+        
+        if (error) {
+          console.error('Supabase transaction sync error:', error);
+        } else {
+          console.log('Transaction synced to Supabase!');
         }
-
-      request.onerror = () => {
-        console.error('Failed to log transaction');
-        reject(new Error('Failed to log transaction'))
+      } catch (err) {
+        console.error('Supabase error:', err);
       }
-    });
-  };
+      
+      resolve(transaction);
+    }
+
+    request.onerror = () => {
+      console.error('Failed to log transaction');
+      reject(new Error('Failed to log transaction'))
+    }
+  });
+}
 
   async getAllTransactions() {
     if (!this.db) await this.init();
@@ -242,6 +324,70 @@ class DatabaseManager {
   }
 }
 
+// Data Recovery: Restore from Supabase
+export const restoreFromSupabase = async () => {
+  try {
+    console.log('Starting restore from Supabase...');
+    
+    // Fetch all products from Supabase
+    const { data: products, error: productsError } = await supabase
+      .from('products')
+      .select('*');
+    
+    if (productsError) throw productsError;
+    
+    // Fetch all transactions from Supabase
+    const { data: transactions, error: transactionsError } = await supabase
+      .from('transactions')
+      .select('*');
+    
+    if (transactionsError) throw transactionsError;
+    
+    //Clear local database
+    await dbManager.clearAllProducts();
+    
+    //Restore products to IndexedDB
+    await dbManager.init();
+    for (const product of products) {
+      await dbManager.addProduct({
+        id: product.id,
+        name: product.name,
+        stock: product.stock,
+        minStock: product.minStock,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        images: product.images || []
+      });
+    }
+    
+    // Restore transactions to IndexedDB
+    for (const transaction of transactions) {
+      await dbManager.addTransaction({
+        productId: transaction.productId,
+        productName: transaction.productName,
+        type: transaction.type,
+        quantity: transaction.quantity,
+        date: transaction.date || transaction.created_at
+      });
+    }
+    
+    console.log('Restore complete');
+    console.log(`Restored ${products.length} products and ${transactions.length} transactions`);
+    
+    return {
+      success: true,
+      productsCount: products.length,
+      transactionsCount: transactions.length
+    };
+  } catch (error) {
+    console.error('Restore failed:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
 const dbManager = new DatabaseManager();
 
 export const initDB = () => dbManager.init();
@@ -255,15 +401,3 @@ export const getAllTransactions = () => dbManager.getAllTransactions();
 export const getTransactionsByProductId = (productId) => dbManager.getTransactionsByProductId(productId);
 
 export default dbManager;
-
-
-// Product Schema:
-// {
-//   id: number (timestamp)
-//   name: string
-//   stock: number
-//   minStock: number
-//   images: array
-//   costPrice: number (NEW - prix d'achat)
-//   sellingPrice: number (NEW - prix de vente)
-// }

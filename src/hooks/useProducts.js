@@ -12,43 +12,17 @@ export const useProducts = () => {
       try {
         await db.initDB();
         const loadedProducts = await db.getAllProducts();
-
-        if (!loadedProducts || loadedProducts.length === 0) {
-          // First time - add sample products
-          const sampleProducts = [
-            {
-              id: Date.now(),
-              name: 'Plaquettes de frein',
-              stock: 8,
-              minStock: 10,
-              images: []
-            },
-            {
-              id: Date.now() + 1,
-              name: 'Filtre à huile',
-              stock: 15,
-              minStock: 5,
-              images: []
-            }
-          ];
-          
-          for (const product of sampleProducts) {
-            await db.addProduct(product);
-          }
-          setProducts(sampleProducts);
-        } else {
-          setProducts(loadedProducts);
-        }
-      } catch (err) {
+        setProducts(loadedProducts || []);
+        } catch (err) {
         console.error('Failed to initialize:', err);
         setError(err.message);
-      } finally {
+        } finally {
         setIsLoading(false);
       }
     };
 
     initApp();
-  }, []);
+    }, []);
 
   // Add new product
   const addNewProduct = async (productData) => {

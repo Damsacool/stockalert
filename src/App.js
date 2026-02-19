@@ -20,6 +20,7 @@ import PrintReports from './components/Layout/PrintReports';
 import InstallPrompt from './components/Common/InstallPrompt';
 import OfflineIndicator from './components/Common/OfflineIndicator';
 import { useNotifications } from './hooks/useNotifications';
+import RestoreButton from './components/Common/RestoreButton';
 
 
 function App() {
@@ -248,6 +249,8 @@ function App() {
             <h1>StockAlert</h1>
             <p>Pièces de rechange</p>
           </div>
+
+          <RestoreButton onRestoreComplete={() => window.location.reload()} /> 
 
           <button 
             onClick={async () => {

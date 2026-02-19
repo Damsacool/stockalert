@@ -155,6 +155,55 @@ Phase 5: Deployment (Month 2-3)
  Cloud sync (optional - multi-device)
 
 
+BACKEND EDITION
+Timeline: Feb 17 → Feb 28 = 11 days
+
+PHASE 6: BACKEND & SYNC
+Week 1: Core Backend
+Day 1-2: Supabase Setup
+
+Create free Supabase account
+Set up database tables (products, transactions)
+Configure authentication (simple PIN system for your dad)
+
+Day 3-4: Sync Logic
+
+Keep IndexedDB for offline
+Add background sync when online
+Auto-backup every change to cloud
+
+Day 5-6: Multi-User Foundation
+
+Add user roles (Owner, Worker)
+Each user gets login
+All changes tracked with "who did what"
+
+Day 7: Testing
+
+Test sync on your phone
+Test on two devices at once
+Make sure offline still works
+
+Week 2 (Feb 24-28): Polish & Deploy
+Day 8-9: Data Recovery
+
+Add "Restore from Cloud" button
+Import/export between devices
+Backup history (last 30 days of changes)
+
+Day 10: Final Testing
+
+Your father tests on his phone
+You test losing/reinstalling app
+Verify all data comes back
+
+Day 11: Deploy & Document
+
+Push to production
+Write simple guide for your dad
+BUILD IN PUBLIC POST 
+
+
 CODE STRUCTURE 
 Current State
 src/
