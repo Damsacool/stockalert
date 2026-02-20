@@ -21,6 +21,7 @@ import InstallPrompt from './components/Common/InstallPrompt';
 import OfflineIndicator from './components/Common/OfflineIndicator';
 import { useNotifications } from './hooks/useNotifications';
 import RestoreButton from './components/Common/RestoreButton';
+import { processSyncQueue } from './utils/db';
 
 
 function App() {
@@ -46,6 +47,29 @@ function App() {
       sendLowStockAlert(lowstockProducts);
     }
   }, [products, requestPermission, sendLowStockAlert]);
+
+  // Auto-sync queue when back online
+React.useEffect(() => {
+  const handleOnline = async () => {
+    console.log('Back online! Processing sync queue...');
+    const result = await processSyncQueue();
+    
+    if (result.success && result.synced > 0) {
+      console.log(`Synced ${result.synced} offline changes!`);
+    }
+  };
+
+  window.addEventListener('online', handleOnline);
+
+  // Also process queue on app load (in case user closed app while offline)
+  if (navigator.onLine) {
+    processSyncQueue();
+  }
+
+  return () => {
+    window.removeEventListener('online', handleOnline);
+  };
+}, []);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);

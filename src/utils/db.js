@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 const DB_NAME = 'StockAlertDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'products';
 
 class DatabaseManager {
@@ -51,6 +51,17 @@ class DatabaseManager {
           transactionStore.createIndex('type', 'type', { unique: false });
           console.log('Transactions store created');
         }
+
+        // Sync queue store
+        if (!db.objectStoreNames.contains('syncQueue')) {
+          const syncStore = db.createObjectStore('syncQueue', {
+            keyPath: 'id',
+            autoIncrement: true
+          });
+          syncStore.createIndex('timestamp', 'timestamp', { unique: false });
+          syncStore.createIndex('synced', 'synced', { unique: false });
+          console.log('Sync queue store created');
+        }
       };
     });
   }
@@ -93,32 +104,38 @@ class DatabaseManager {
       const request = objectStore.add(cleanProduct);
 
       request.onsuccess = async () => {
-  console.log('Product added successfully:', cleanProduct.name);
-  
-  // Sync product to Supabase
-  try {
-    const { error } = await supabase
-        .from('products')
-        .insert([{
-          id: cleanProduct.id,
-          name: cleanProduct.name,
-          stock: cleanProduct.stock,
-          minStock: cleanProduct.minStock,
-          costPrice: cleanProduct.costPrice,
-          sellingPrice: cleanProduct.sellingPrice,
-          images: cleanProduct.images
-          }]);
+        console.log('Product added successfully:', cleanProduct.name);
         
-        if (error) {
-         console.error('Supabase sync error:', error);
-         console.error('Error details:', JSON.stringify(error, null, 2));
-        } else {
-        console.log('Synced to Supabase successfully!');
-     }
+        // Try to sync to Supabase
+        try {
+          const { error } = await supabase
+            .from('products')
+            .insert([{
+              id: cleanProduct.id,
+              name: cleanProduct.name,
+              stock: cleanProduct.stock,
+              minStock: cleanProduct.minStock,
+              costPrice: cleanProduct.costPrice,
+              sellingPrice: cleanProduct.sellingPrice,
+              images: cleanProduct.images
+            }]);
+          
+          if (error) throw error;
+          console.log('Synced to Supabase successfully!');
         } catch (err) {
-        console.error('Supabase error:', err);
+          console.error('Sync failed, adding to queue:', err.message);
+          // Add to queue for later sync
+          await addToSyncQueue('ADD_PRODUCT', {
+            id: cleanProduct.id,
+            name: cleanProduct.name,
+            stock: cleanProduct.stock,
+            minStock: cleanProduct.minStock,
+            costPrice: cleanProduct.costPrice,
+            sellingPrice: cleanProduct.sellingPrice,
+            images: cleanProduct.images
+          });
         }
-  
+        
         resolve(cleanProduct);
       };
 
@@ -155,30 +172,45 @@ class DatabaseManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([STORE_NAME], 'readwrite');
       const objectStore = transaction.objectStore(STORE_NAME);
-      const request = objectStore.put(product);request.onsuccess = async () => {
-  console.log('Product updated:', product.name);
-  
-  // Sync update to Supabase
-  try {
-    const { error } = await supabase
-      .from('products')
-      .update({
-        name: product.name,
-        stock: product.stock,
-        minStock: product.minStock,
-        costPrice: product.costPrice,
-        sellingPrice: product.sellingPrice,
-        images: product.images
-      })
-      .eq('id', product.id);
-    
-    if (error) console.error('Supabase sync error:', error);
-  } catch (err) {
-    console.error('Supabase error:', err);
-  }
-  
-  resolve(product);
-};
+      const request = objectStore.put(product);
+
+      request.onsuccess = async () => {
+        console.log('Product updated:', product.name);
+        
+        // Try to sync to Supabase
+        try {
+          const { error } = await supabase
+            .from('products')
+            .update({
+              name: product.name,
+              stock: product.stock,
+              minStock: product.minStock,
+              costPrice: product.costPrice,
+              sellingPrice: product.sellingPrice,
+              images: product.images
+            })
+            .eq('id', product.id);
+          
+          if (error) throw error;
+          console.log('Update synced to Supabase!');
+        } catch (err) {
+          console.error('Update sync failed, adding to queue:', err.message);
+          // Add to queue for later sync
+          await addToSyncQueue('UPDATE_PRODUCT', {
+            id: product.id,
+            updates: {
+              name: product.name,
+              stock: product.stock,
+              minStock: product.minStock,
+              costPrice: product.costPrice,
+              sellingPrice: product.sellingPrice,
+              images: product.images
+            }
+          });
+        }
+        
+        resolve(product);
+      };
 
       request.onerror = () => {
         console.error('Failed to update product');
@@ -197,22 +229,24 @@ class DatabaseManager {
 
       request.onsuccess = async () => {
         console.log('Product deleted:', productId);
-          //delete from Supabase
-      try {
-        const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', productId);
-    
-      if (error) {
-        console.error('Supabase delete error:', error);
-      } else {
-       console.log('Deleted from Supabase!');
-     }
-    } catch (err) {
-      console.error('Supabase error:', err);
-    }
-
+        
+        // Try to delete from Supabase
+        try {
+          const { error } = await supabase
+            .from('products')
+            .delete()
+            .eq('id', productId);
+          
+          if (error) throw error;
+          console.log('Deleted from Supabase!');
+        } catch (err) {
+          console.error('Delete sync failed, adding to queue:', err.message);
+          // Add to queue for later sync
+          await addToSyncQueue('DELETE_PRODUCT', {
+            id: productId
+          });
+        }
+        
         resolve(productId);
       };
 
@@ -244,46 +278,50 @@ class DatabaseManager {
   }
 
   // Transaction methods
-async addTransaction(transaction) {
-  if (!this.db) await this.init();
+  async addTransaction(transaction) {
+    if (!this.db) await this.init();
 
-  return new Promise((resolve, reject) => {
-    const txn = this.db.transaction(['transactions'], 'readwrite');
-    const store = txn.objectStore('transactions');
-    const request = store.add(transaction);
+    return new Promise((resolve, reject) => {
+      const txn = this.db.transaction(['transactions'], 'readwrite');
+      const store = txn.objectStore('transactions');
+      const request = store.add(transaction);
 
-    request.onsuccess = async () => {
-      console.log('Transaction logged');
-      
-      //sync to Supabase
-      try {
-        const { error } = await supabase
-          .from('transactions')
-          .insert([{
+      request.onsuccess = async () => {
+        console.log('Transaction logged');
+        
+        // Try to sync to Supabase
+        try {
+          const { error } = await supabase
+            .from('transactions')
+            .insert([{
+              productId: transaction.productId,
+              productName: transaction.productName,
+              type: transaction.type,
+              quantity: transaction.quantity
+            }]);
+          
+          if (error) throw error;
+          console.log('Transaction synced to Supabase!');
+        } catch (err) {
+          console.error('Transaction sync failed, adding to queue:', err.message);
+          // Add to queue for later sync
+          await addToSyncQueue('ADD_TRANSACTION', {
             productId: transaction.productId,
             productName: transaction.productName,
             type: transaction.type,
             quantity: transaction.quantity
-          }]);
-        
-        if (error) {
-          console.error('Supabase transaction sync error:', error);
-        } else {
-          console.log('Transaction synced to Supabase!');
+          });
         }
-      } catch (err) {
-        console.error('Supabase error:', err);
-      }
-      
-      resolve(transaction);
-    }
+        
+        resolve(transaction);
+      };
 
-    request.onerror = () => {
-      console.error('Failed to log transaction');
-      reject(new Error('Failed to log transaction'))
-    }
-  });
-}
+      request.onerror = () => {
+        console.error('Failed to log transaction');
+        reject(new Error('Failed to log transaction'));
+      };
+    });
+  }
 
   async getAllTransactions() {
     if (!this.db) await this.init();
@@ -293,18 +331,18 @@ async addTransaction(transaction) {
       const store = transaction.objectStore('transactions');
       const request = store.getAll();
 
-      request.onsuccess  = () => {
+      request.onsuccess = () => {
         resolve(request.result || []);
-      }
+      };
 
       request.onerror = () => {
         console.error('Failed to get transaction');
         reject(new Error('Failed to get transactions'));
-      }
-    })
+      };
+    });
   }
 
-    async getTransactionsByProductId(productId) {
+  async getTransactionsByProductId(productId) {
     if (!this.db) await this.init();
 
     return new Promise((resolve, reject) => {
@@ -319,12 +357,130 @@ async addTransaction(transaction) {
 
       request.onerror = () => {
         reject(new Error('Failed to get transactions by product ID'));
-      }
+      };
     });
   }
 }
 
-// Data Recovery: Restore from Supabase
+const dbManager = new DatabaseManager();
+
+// Sync queue functions
+export const addToSyncQueue = async (action, data) => {
+  try {
+    const db = await dbManager.init();
+    const tx = db.transaction(['syncQueue'], 'readwrite');
+    const store = tx.objectStore('syncQueue');
+    
+    const request = store.add({
+      action,
+      data,
+      timestamp: Date.now(),
+      synced: false
+    });
+    
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        console.log('Added to sync queue:', action);
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.error('Failed to add to sync queue:', err);
+  }
+};
+
+export const getSyncQueue = async () => {
+  const db = await dbManager.init();
+  
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['syncQueue'], 'readonly');
+    const store = tx.objectStore('syncQueue');
+    const request = store.getAll();
+    
+    request.onsuccess = () => {
+      const items = request.result || [];
+      resolve(items.filter(item => !item.synced));
+    };
+    
+    request.onerror = () => {
+      reject(new Error('Failed to get sync queue'));
+    };
+  });
+};
+
+export const markAsSynced = async (db, queueId) => {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['syncQueue'], 'readwrite');
+    const store = tx.objectStore('syncQueue');
+    const request = store.delete(queueId);
+    
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export const processSyncQueue = async () => {
+  try {
+    const queue = await getSyncQueue();
+    
+    if (queue.length === 0) {
+      console.log('Sync queue empty');
+      return { success: true, synced: 0 };
+    }
+    
+    console.log(`Processing ${queue.length} queued items...`);
+    
+    const db = await dbManager.init();
+    let synced = 0;
+    
+    for (const item of queue) {
+      try {
+        let result;
+        
+        switch (item.action) {
+          case 'ADD_PRODUCT':
+            result = await supabase.from('products').insert([item.data]);
+            break;
+          case 'UPDATE_PRODUCT':
+            result = await supabase.from('products').update(item.data.updates).eq('id', item.data.id);
+            break;
+          case 'DELETE_PRODUCT':
+            result = await supabase.from('products').delete().eq('id', item.data.id);
+            break;
+          case 'ADD_TRANSACTION':
+            result = await supabase.from('transactions').insert([item.data]);
+            break;
+
+            default:
+              console.warn('Unknown sync action:', item.action);
+              continue;
+        }
+        
+        if (result.error) {
+          if (result.error.code === '23505' || result.error.message.includes('duplicate')) {
+            console.log(`Item ${item.id} already synced, removing from queue`);
+          } else {
+            throw result.error;
+          }
+        }
+        
+        await markAsSynced(db, item.id);
+        synced++;
+      } catch (err) {
+        console.error(`Failed to sync item ${item.id}:`, err.message);
+      }
+    }
+    
+    console.log(`Synced ${synced}/${queue.length} items`);
+    return { success: true, synced };
+  } catch (err) {
+    console.error('Sync queue processing failed:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+// Data Recovery - Restore from Supabase
 export const restoreFromSupabase = async () => {
   try {
     console.log('Starting restore from Supabase...');
@@ -343,10 +499,10 @@ export const restoreFromSupabase = async () => {
     
     if (transactionsError) throw transactionsError;
     
-    //Clear local database
+    // Clear local database
     await dbManager.clearAllProducts();
     
-    //Restore products to IndexedDB
+    // Restore products to IndexedDB
     await dbManager.init();
     for (const product of products) {
       await dbManager.addProduct({
@@ -371,7 +527,7 @@ export const restoreFromSupabase = async () => {
       });
     }
     
-    console.log('Restore complete');
+    console.log('Restore complete!');
     console.log(`Restored ${products.length} products and ${transactions.length} transactions`);
     
     return {
@@ -388,8 +544,7 @@ export const restoreFromSupabase = async () => {
   }
 };
 
-const dbManager = new DatabaseManager();
-
+// Exported functions
 export const initDB = () => dbManager.init();
 export const getAllProducts = () => dbManager.getAllProducts();
 export const addProduct = (product) => dbManager.addProduct(product);
