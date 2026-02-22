@@ -224,28 +224,28 @@ Difficult to reuse components
 No clear separation of concerns
 
 
-📁 TARGET STRUCTURE (Clean - "Onion Layers")
+TARGET STRUCTURE (Clean - "Onion Layers")
 src/
-├── 📄 PROJECT.md              ← This file (your roadmap)
-├── App.js                     ← THIN (just composition)
+├── PROJECT.md              
+├── App.js                    
 │
 ├── components/
-│   ├── layout/                ← Page structure
+│   ├── layout/                
 │   │   ├── Header.jsx
 │   │   ├── Container.jsx
 │   │   └── EmptyState.jsx
 │   │
-│   ├── product/               ← Product features
+│   ├── product/               
 │   │   ├── ProductCard.jsx
 │   │   ├── ProductGrid.jsx
 │   │   └── ProductImageGallery.jsx
 │   │
-│   ├── modals/                ← All popups
+│   ├── modals/               
 │   │   ├── AddProductModal.jsx
 │   │   ├── BulkEditModal.jsx
 │   │   └── ImageEditorModal.jsx
 │   │
-│   └── common/                ← Reusable UI
+│   └── common/               
 │       ├── Button.jsx
 │       ├── Input.jsx
 │       ├── Modal.jsx

@@ -11,7 +11,7 @@ class DatabaseManager {
 
   async init() {
     return new Promise((resolve, reject) => {
-      console.log('Opening database...');
+      // console.log('Opening database...');
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => {
@@ -21,7 +21,7 @@ class DatabaseManager {
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('Database opened successfully');
+        // console.log('Database opened successfully');
         resolve(this.db);
       };
 
@@ -104,7 +104,7 @@ class DatabaseManager {
       const request = objectStore.add(cleanProduct);
 
       request.onsuccess = async () => {
-        console.log('Product added successfully:', cleanProduct.name);
+        // console.log('Product added successfully:', cleanProduct.name);
         
         // Try to sync to Supabase
         try {
@@ -155,7 +155,7 @@ class DatabaseManager {
       const request = objectStore.getAll();
 
       request.onsuccess = () => {
-        console.log('Loaded products:', request.result.length);
+        // console.log('Loaded products:', request.result.length);
         resolve(request.result || []);
       };
 
@@ -425,11 +425,10 @@ export const processSyncQueue = async () => {
     const queue = await getSyncQueue();
     
     if (queue.length === 0) {
-      console.log('Sync queue empty');
       return { success: true, synced: 0 };
     }
     
-    console.log(`Processing ${queue.length} queued items...`);
+    console.log(`Syncing ${queue.length} offline changes...`);
     
     const db = await dbManager.init();
     let synced = 0;
@@ -459,7 +458,7 @@ export const processSyncQueue = async () => {
         
         if (result.error) {
           if (result.error.code === '23505' || result.error.message.includes('duplicate')) {
-            console.log(`Item ${item.id} already synced, removing from queue`);
+            // console.log(`Item ${item.id} already synced, removing from queue`);
           } else {
             throw result.error;
           }
@@ -472,10 +471,13 @@ export const processSyncQueue = async () => {
       }
     }
     
-    console.log(`Synced ${synced}/${queue.length} items`);
+    if (synced > 0) {  
+    console.log(`Synced ${synced} changes to cloud`);
+    }
+
     return { success: true, synced };
   } catch (err) {
-    console.error('Sync queue processing failed:', err);
+    console.error('Sync queue failed:', err);
     return { success: false, error: err.message };
   }
 };
@@ -501,11 +503,18 @@ export const restoreFromSupabase = async () => {
     
     // Clear local database
     await dbManager.clearAllProducts();
+
+    const db = await dbManager.init();
+
+    // Batch insert products
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['products', 'transactions'], 'readwrite');
+      const productStore = tx.objectStore('products');
+      const transactionStore = tx.objectStore('transactions');
     
-    // Restore products to IndexedDB
-    await dbManager.init();
+    // Add all products
     for (const product of products) {
-      await dbManager.addProduct({
+      productStore.add({
         id: product.id,
         name: product.name,
         stock: product.stock,
@@ -516,9 +525,9 @@ export const restoreFromSupabase = async () => {
       });
     }
     
-    // Restore transactions to IndexedDB
+    // Add all transactions
     for (const transaction of transactions) {
-      await dbManager.addTransaction({
+      transactionStore.add({
         productId: transaction.productId,
         productName: transaction.productName,
         type: transaction.type,
@@ -526,22 +535,29 @@ export const restoreFromSupabase = async () => {
         date: transaction.date || transaction.created_at
       });
     }
-    
-    console.log('Restore complete!');
-    console.log(`Restored ${products.length} products and ${transactions.length} transactions`);
-    
-    return {
-      success: true,
-      productsCount: products.length,
-      transactionsCount: transactions.length
+
+    tx.oncomplete = () => {
+       console.log('Restore complete!');
+       console.log(`Restored ${products.length} products and ${transactions.length} transactions`);
+       resolve({
+        success: true,
+        productsCount: products.length,
+        transactionsCount: transactions.length
+       });
     };
-  } catch (error) {
-    console.error('Restore failed:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
+    
+    tx.onerror = () => {
+    console.error('Restore failed:', tx.error);
+    reject(new Error('Restore transaction failed'));
+    }
+  });
+} catch (error) {
+  console.error('Restore failed:', error);
+  return {
+    success: false,
+    error: error.message
+  };
+}
 };
 
 // Exported functions
@@ -555,4 +571,4 @@ export const addTransaction = (transaction) => dbManager.addTransaction(transact
 export const getAllTransactions = () => dbManager.getAllTransactions();
 export const getTransactionsByProductId = (productId) => dbManager.getTransactionsByProductId(productId);
 
-export default dbManager;
+export default dbManager; 

@@ -35,18 +35,48 @@ function App() {
   } = useProducts();
 
   const {
+    permission,
     requestPermission,
     sendLowStockAlert
   } = useNotifications();
 
+  // Check for low stock and schedule daily reminders
   React.useEffect(() => {
-    const lowstockProducts = products.filter(p => p.stock <= p.minStock);
-
-    if (lowstockProducts.length > 0) {
+  const lowstockProducts = products.filter(p => p.stock <= p.minStock);
+  
+  if (lowstockProducts.length > 0) {
+    if ( permission === 'default') {
       requestPermission();
-      sendLowStockAlert(lowstockProducts);
     }
-  }, [products, requestPermission, sendLowStockAlert]);
+    
+    // Schedule daily 6 PM reminder
+    const now = new Date();
+    const lastReminder = localStorage.getItem('lastLowStockReminder');
+    const today = now.toDateString();
+    
+    // Remind once per day
+    if (lastReminder !== today) {
+      const reminderTime = new Date();
+      reminderTime.setHours(18, 0, 0, 0); 
+
+      // If past 6 PM, schedule for tomorrow
+      if (now > reminderTime) {
+        reminderTime.setDate(reminderTime.getDate() + 1);
+      }
+      
+      const timeUntilReminder = reminderTime - now;
+      
+      setTimeout(() => {
+        if ( permission === 'granted') {
+          sendLowStockAlert(lowstockProducts);
+          localStorage.setItem('lastLowStockReminder', new Date().toDateString());
+        }
+      }, timeUntilReminder);
+      
+      console.log(`Low stock reminder scheduled for ${reminderTime.toLocaleString()}`);
+    }
+  }
+}, [products, permission, requestPermission, sendLowStockAlert]);
 
   // Auto-sync queue when back online
 React.useEffect(() => {
@@ -273,6 +303,29 @@ React.useEffect(() => {
             <h1>StockAlert</h1>
             <p>Pièces de rechange</p>
           </div>
+
+          {/* Test notification button */}
+<button
+  onClick={() => {
+    const lowStock = products.filter(p => p.stock <= p.minStock);
+    if (lowStock.length > 0) {
+      sendLowStockAlert(lowStock);
+    } else {
+      alert('Aucun produit en stock bas');
+    }
+  }}
+  style={{
+    padding: '8px 16px',
+    background: '#f59e0b',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px'
+  }}
+>
+  Test Notification
+</button>
 
           <RestoreButton onRestoreComplete={() => window.location.reload()} /> 
 
