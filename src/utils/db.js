@@ -108,7 +108,7 @@ class DatabaseManager {
         
         // Try to sync to Supabase
         try {
-          const { data: { user } } = await supabase.auth.getUser();
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
           const { error } = await supabase
             .from('products')
             .insert([{
@@ -118,7 +118,9 @@ class DatabaseManager {
               minStock: cleanProduct.minStock,
               costPrice: cleanProduct.costPrice,
               sellingPrice: cleanProduct.sellingPrice,
-              images: cleanProduct.images
+              images: cleanProduct.images,
+              created_by: currentUser?.id,
+              updated_by: currentUser?.id
             }]);
           
           if (error) throw error;
@@ -180,18 +182,19 @@ class DatabaseManager {
         
         // Try to sync to Supabase
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          const { error } = await supabase
-            .from('products')
-            .update({
-              name: product.name,
-              stock: product.stock,
-              minStock: product.minStock,
-              costPrice: product.costPrice,
-              sellingPrice: product.sellingPrice,
-              images: product.images
-            })
-            .eq('id', product.id);
+         const { data: { user: currentUser } } = await supabase.auth.getUser();
+         const { error } = await supabase
+          .from('products')
+          .update({
+            name: product.name,
+            stock: product.stock,
+            minStock: product.minStock,
+            costPrice: product.costPrice,
+            sellingPrice: product.sellingPrice,
+            images: product.images,
+            updated_by: currentUser?.id,
+            updated_at: new Date().toISOString()
+          }).eq('id', product.id);
           
           if (error) throw error;
           console.log('Update synced to Supabase!');
@@ -293,15 +296,16 @@ class DatabaseManager {
         
         // Try to sync to Supabase
         try {
-          const { data: { user } } = await supabase.auth.getUser();
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
           const { error } = await supabase
             .from('transactions')
             .insert([{
               productId: transaction.productId,
               productName: transaction.productName,
               type: transaction.type,
-              quantity: transaction.quantity
-            }]);
+              quantity: transaction.quantity,
+              created_by: currentUser?.id
+        }]);
           
           if (error) throw error;
           console.log('Transaction synced to Supabase!');
