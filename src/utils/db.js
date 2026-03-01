@@ -108,6 +108,7 @@ class DatabaseManager {
         
         // Try to sync to Supabase
         try {
+          const { data: { user } } = await supabase.auth.getUser();
           const { error } = await supabase
             .from('products')
             .insert([{
@@ -179,6 +180,7 @@ class DatabaseManager {
         
         // Try to sync to Supabase
         try {
+          const { data: { user } } = await supabase.auth.getUser();
           const { error } = await supabase
             .from('products')
             .update({
@@ -291,6 +293,7 @@ class DatabaseManager {
         
         // Try to sync to Supabase
         try {
+          const { data: { user } } = await supabase.auth.getUser();
           const { error } = await supabase
             .from('transactions')
             .insert([{
@@ -439,16 +442,30 @@ export const processSyncQueue = async () => {
         
         switch (item.action) {
           case 'ADD_PRODUCT':
-            result = await supabase.from('products').insert([item.data]);
+            const { data: { user: addUser } } = await supabase.auth.getUser();
+            result = await supabase.from('products').insert([{
+              ...item.data, 
+              created_by: addUser?.id,
+              updated_by: addUser?.id
+            }]);
             break;
           case 'UPDATE_PRODUCT':
-            result = await supabase.from('products').update(item.data.updates).eq('id', item.data.id);
+            const { data: { user: updateUser } } = await supabase.auth.getUser();
+            result = await supabase.from('products').update({
+              ...item.data.updates,
+              updated_by: updateUser?.id,
+              updated_at: new Date().toISOString()
+            }).eq('id', item.data.id);
             break;
           case 'DELETE_PRODUCT':
             result = await supabase.from('products').delete().eq('id', item.data.id);
             break;
           case 'ADD_TRANSACTION':
-            result = await supabase.from('transactions').insert([item.data]);
+            const { data: { user: txUser } } = await supabase.auth.getUser();
+            result = await supabase.from('transactions').insert([{
+            ...item.data,
+            created_by: txUser?.id
+          }]);
             break;
 
             default:

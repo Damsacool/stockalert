@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Camera, Trash2, AlertTriangle, Package} from 'lucide-react';
 
-const ProductCard = ({ product, onStockChange, onEdit, onDelete}) => {
+const ProductCard = ({ product, onStockChange, onEdit, onDelete, userRole }) => {
     const [showImageZoom, setShowImageZoom] = useState(false);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
@@ -85,6 +85,17 @@ const prevImage = () => {
           >
             <Camera size={18} />
           </button>
+
+          
+            <button 
+              className="btn-icon btn-primary"
+              onClick={() => onEdit(product)}
+              title="Modifier produit"
+            >
+              <Package size={18} />
+            </button>
+          
+          {userRole === 'owner' && (
           <button 
             className="btn-icon btn-danger"
             onClick={() => onDelete(product.id)}
@@ -92,6 +103,7 @@ const prevImage = () => {
           >
             <Trash2 size={18} />
           </button>
+          )}
         </div>
 
         {/* Stock Display */}
@@ -101,22 +113,25 @@ const prevImage = () => {
         </div>
 
         {/* Price info */}
-        {product.costPrice && product.sellingPrice && (
+        {product.costPrice && product.sellingPrice && userRole === 'owner' && (
           <div className='product-pricing'>
             <div className='price-row'>
               <span className='price-label'>Achat:</span>
               <span className='price-value'>{product.costPrice.toLocaleString()} CFA</span>
             </div>
+        
 
             <div className='price-row'>
               <span className='price-label'>Vente:</span>
               <span className='price-value selling'>{product.sellingPrice.toLocaleString()} CFA</span>
             </div>
 
+            {userRole === 'owner' && (
             <div className='price-row profit-row'>
               <span className='price-label'>Profit/unité</span>
               <span className='price-value profit'>+{(product.sellingPrice - product.costPrice).toLocaleString()} CFA</span>
             </div>
+            )}
           </div>
         )}
 

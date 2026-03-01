@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Package } from 'lucide-react';
+import { Plus, Package, UserPlus } from 'lucide-react';
 import { useProducts } from './hooks/useProducts';
 import LoadingScreen from './components/Common/LoadingScreen'
 import ProductCard from './components/Product Features/ProductCard';
@@ -22,9 +22,18 @@ import OfflineIndicator from './components/Common/OfflineIndicator';
 import { useNotifications } from './hooks/useNotifications';
 import RestoreButton from './components/Common/RestoreButton';
 import { processSyncQueue } from './utils/db';
-
+import { useAuth } from './contexts/AuthContext';
+import LoginScreen from './components/Auth/LoginScreen';
+import AddWorkerModal from './components/Auth/AddWorkerModal';
 
 function App() {
+  const { 
+    user, 
+    profile,
+    loading 
+  } = useAuth();
+  console.log('Profile:', profile);
+
   const {
     products,
     isLoading,
@@ -111,6 +120,7 @@ React.useEffect(() => {
   const [filterType, setFilterType] = useState('all');
   const [sortBy, setSortBy] = useState('name');
   const [activeTab, setActiveTab] = useState('inventory');
+  const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -287,9 +297,13 @@ React.useEffect(() => {
     }
   });
 
-  if  (isLoading) {
+  if (loading) {
+  return <LoadingScreen />;
+}
 
-  }
+if (!user) {
+  return <LoginScreen />;
+}
 
   return (
     <div className='app'>
@@ -304,31 +318,31 @@ React.useEffect(() => {
             <p>Pièces de rechange</p>
           </div>
 
-          {/* Test notification button */}
-<button
-  onClick={() => {
-    const lowStock = products.filter(p => p.stock <= p.minStock);
-    if (lowStock.length > 0) {
-      sendLowStockAlert(lowStock);
-    } else {
-      alert('Aucun produit en stock bas');
-    }
-  }}
-  style={{
-    padding: '8px 16px',
-    background: '#f59e0b',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px'
-  }}
->
-  Test Notification
-</button>
+           {/* Worker button - only for owners */}
+      {profile?.role === 'owner' && (
+       <button
+        onClick={() => setShowAddWorkerModal(true)}
+        style={{
+          padding: '8px 16px',
+          background: '#10b981',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontSize: '14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}
+      >
+        <UserPlus size={18} />
+        Ajouter travailleur
+      </button>
+    )}
 
           <RestoreButton onRestoreComplete={() => window.location.reload()} /> 
 
+          {profile?.role === 'owner' && ( 
           <button 
             onClick={async () => {
               if (window.confirm('Reset database?')) {
@@ -348,6 +362,7 @@ React.useEffect(() => {
           >
             Reset DB
           </button>
+          )}
         </div>
       </header>
 
@@ -404,6 +419,7 @@ React.useEffect(() => {
                     onStockChange={handleStockChange}
                     onEdit={handleEditImages}
                     onDelete={handleDeleteProduct}
+                    userRole={profile?.role}
                   />
                 ))
               )}
@@ -447,21 +463,30 @@ React.useEffect(() => {
         {/* TAB 4: RAPPORTS */}
         {activeTab === 'reports' && (
           <>
-            {products.length > 0 ? (
-              <PrintReports 
-                products={products}
-                onExport={handleExport}
-                onExportSummary={handleExportSummary}
-              />
+            {profile?.role === 'owner' ? (
+              products.length > 0 ? (
+                <PrintReports
+                  products={products}
+                  onExport={handleExport}
+                  onExportSummary={handleExportSummary}
+                />
+              ) : (
+                <div className='empty-state'>
+                  <Package size={64} strokeWidth={1} />
+                  <p>Aucun produit</p>
+                  <p className='empty-subtitle'>Ajoutez des produits dans l'onglet Inventaire</p>
+                </div>
+              )
             ) : (
               <div className='empty-state'>
                 <Package size={64} strokeWidth={1} />
-                <p>Aucun produit</p>
-                <p className='empty-subtitle'>Ajoutez des produits dans l'onglet Inventaire</p>
+                <p>Accès restreint</p>
+                <p className='empty-subtitle'>Les rapports sont réservés au propriétaire</p>
               </div>
             )}
           </>
         )}
+
       </div>
 
       <AddProductModal
@@ -489,6 +514,16 @@ React.useEffect(() => {
         product={selectedProduct}
         setProduct={setSelectedProduct}
         updateImages={updateImages}
+        />
+
+
+      {/* Modals */}
+      <AddWorkerModal
+        show={showAddWorkerModal}
+        onClose={() => setShowAddWorkerModal(false)}
+        onWorkerAdded={() => {
+          alert('Travailleur ajouté avec succès!');
+        }}
       />
     </div>
   );
